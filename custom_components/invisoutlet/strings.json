@@ -1,0 +1,66 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "outlet": {
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "The IP address or hostname of the InvisOutlet device."
+        }
+      },
+      "zeroconf_confirm": {
+        "description": "Do you want to add the InvisOutlet device {name}?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect"
+    },
+    "abort": {
+      "already_configured": "Device is already configured",
+      "outlet_added": "Outlet added",
+      "no_serial": "The discovered device did not report a serial number"
+    }
+  },
+  "config_subentries": {
+    "aura_effect": {
+      "initiate_flow": {
+        "user": "Add Aura Effect"
+      },
+      "entry_type": "Aura effect",
+      "step": {
+        "user": {
+          "title": "Add Aura Effect",
+          "data": {
+            "name": "Name"
+          }
+        }
+      },
+      "abort": {
+        "added": "Aura Effect added"
+      }
+    }
+  },
+  "entity": {
+    "select": {
+      "aura_effect": {
+        "name": "Effect",
+        "state": {
+          "static_color": "Static (Color)",
+          "static_temperature": "Static (Temperature)",
+          "breathing": "Breathing",
+          "strobing": "Strobing",
+          "color_cycle": "Color cycle",
+          "rainbow": "Rainbow",
+          "starry_night": "Starry night"
+        }
+      }
+    },
+    "switch": {
+      "outlet": {
+        "name": "Outlet {number}"
+      }
+    }
+  }
+}
