@@ -27,6 +27,9 @@ SUBENTRY_AURA_EFFECT = "aura_effect"
 # flow registered), so outlets group under one "InvisOutlet" row with no button.
 SUBENTRY_OUTLET = "outlet"
 CONF_OUTLETS = "outlets"
+# Per-outlet keys under CONF_OUTLETS[serial]: the device name and area chosen in
+# the add flow, applied when the device is first registered.
+CONF_AREA = "area"
 # Per-outlet map under CONF_OUTLETS[serial]: {light selector: effect_id} — the
 # Aura effect selected on each physical color light. Stored in the entry (not
 # RestoreEntity) so it survives the frequent reloads from adding/editing effects.

@@ -10,8 +10,19 @@
           "host": "The IP address or hostname of the InvisOutlet device."
         }
       },
+      "name": {
+        "title": "Name outlet",
+        "data": {
+          "name": "Name",
+          "area": "Area"
+        }
+      },
       "zeroconf_confirm": {
-        "description": "Do you want to add the InvisOutlet device {name}?"
+        "description": "Do you want to add the InvisOutlet device {name}?",
+        "data": {
+          "name": "Name",
+          "area": "Area"
+        }
       }
     },
     "error": {
