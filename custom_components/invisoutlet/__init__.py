@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from types import MappingProxyType
+from typing import Any
 
 from homeassistant.config_entries import ConfigSubentry
-from homeassistant.const import CONF_HOST
+from homeassistant.const import CONF_HOST, CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import entity_registry as er
@@ -23,11 +24,13 @@ from homeassistant.helpers.typing import ConfigType
 from invisoutlet import InvisOutletClient
 
 from .const import (
+    CONF_AREA,
     CONF_EFFECTS,
     CONF_ENTRY_TYPE,
     CONF_OUTLETS,
     DOMAIN,
     ENTRY_TYPE_HUB,
+    MANUFACTURER,
     PLATFORMS,
     SUBENTRY_AURA_EFFECT,
     SUBENTRY_OUTLET,
@@ -59,6 +62,29 @@ async def _async_add_outlet(
     themselves) and True for a later add, so its entities appear without
     reloading the others.
     """
+    dev_reg = async_get_device_registry(hass)
+    if dev_reg.async_get_device(identifiers={(DOMAIN, serial)}) is None:
+        # Register the device before its entities so the name chosen in the
+        # add flow drives the entity ids. The entities' device_info later
+        # renames the device to its model + serial, so the choice goes in as
+        # name_by_user, which wins and sticks. Only values actually chosen are
+        # applied: a re-added outlet arrives without them (the flow skips the
+        # name step), so its restored name/area/entity ids survive untouched.
+        subentries = entry.get_subentries_of_type(SUBENTRY_OUTLET)
+        device = dev_reg.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            config_subentry_id=subentries[0].subentry_id if subentries else None,
+            identifiers={(DOMAIN, serial)},
+            manufacturer=MANUFACTURER,
+            name=outlet.get(CONF_NAME, f"InvisOutlet {serial}"),
+        )
+        updates: dict[str, Any] = {}
+        if outlet.get(CONF_NAME):
+            updates["name_by_user"] = outlet[CONF_NAME]
+        if outlet.get(CONF_AREA):
+            updates["area_id"] = outlet[CONF_AREA]
+        if updates:
+            dev_reg.async_update_device(device.id, **updates)
     client = InvisOutletClient(outlet[CONF_HOST])
     coordinator = InvisOutletCoordinator(hass, entry, serial, client)
     try:

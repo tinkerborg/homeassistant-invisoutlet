@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import voluptuous as vol
 from homeassistant.config_entries import (
+    SOURCE_SYSTEM,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
@@ -16,12 +17,16 @@ from homeassistant.config_entries import (
     SubentryFlowResult,
 )
 from homeassistant.const import CONF_HOST, CONF_NAME
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import discovery_flow
+from homeassistant.helpers.selector import AreaSelector
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from invisoutlet import InvisOutletClient, InvisOutletError
 
 from .const import (
+    CONF_AREA,
     CONF_EFFECTS,
     CONF_ENTRY_TYPE,
     CONF_OUTLETS,
@@ -32,7 +37,28 @@ from .const import (
 )
 
 STEP_OUTLET_DATA_SCHEMA = vol.Schema({vol.Required(CONF_HOST): str})
+OUTLET_NAME_SCHEMA = vol.Schema(
+    {vol.Required(CONF_NAME): str, vol.Optional(CONF_AREA): AreaSelector()}
+)
 AURA_EFFECT_SCHEMA = vol.Schema({vol.Required(CONF_NAME): str})
+
+
+def _named_outlet(outlet: dict[str, Any], user_input: dict[str, Any]) -> dict[str, Any]:
+    """The outlet config with the chosen device name (and area, if picked)."""
+    named = {**outlet, CONF_NAME: user_input[CONF_NAME]}
+    if area := user_input.get(CONF_AREA):
+        named[CONF_AREA] = area
+    return named
+
+
+def _previously_known(hass: HomeAssistant, serial: str) -> bool:
+    """Whether this outlet was configured before (a tombstoned device exists).
+
+    Re-adding it restores the old identity — name, area, entity ids — so the
+    flow skips the naming step for it.
+    """
+    dev_reg = dr.async_get(hass)
+    return dev_reg.deleted_devices.get_entry({(DOMAIN, serial)}, None) is not None
 
 
 async def _probe_outlet(host: str) -> tuple[str, dict[str, Any]]:
@@ -55,6 +81,7 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         """Initialize the flow."""
         self._discovered: dict[str, Any] | None = None
+        self._probed: dict[str, Any] | None = None
 
     @classmethod
     @callback
@@ -73,16 +100,46 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
                 return entry
         return None
 
+    async def async_step_system(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Create the hub entry in the background (never user-visible).
+
+        Started by ``_async_add_outlet`` when no hub exists yet. Because the
+        user-facing flow aborts instead of creating the entry itself, the
+        stock entry-created dialog never shows.
+        """
+        assert user_input is not None
+        if self._find_hub() is not None:
+            # The hub appeared while this flow was queued: append instead.
+            return await self._async_add_outlet(
+                user_input["serial"], user_input["outlet"]
+            )
+        return self.async_create_entry(
+            title="InvisOutlet Devices",
+            data={
+                CONF_ENTRY_TYPE: ENTRY_TYPE_HUB,
+                CONF_OUTLETS: {user_input["serial"]: user_input["outlet"]},
+            },
+        )
+
     async def _async_add_outlet(
         self, serial: str, outlet: dict[str, Any]
     ) -> ConfigFlowResult:
-        """Create the hub with this outlet, or add it to the existing hub."""
+        """Add the outlet to the hub, creating the hub in the background.
+
+        Always aborts: the hub entry itself is only ever created by the
+        system-source flow above, so no add ever surfaces the stock dialog.
+        """
         hub = self._find_hub()
         if hub is None:
-            return self.async_create_entry(
-                title="InvisOutlet Devices",
-                data={CONF_ENTRY_TYPE: ENTRY_TYPE_HUB, CONF_OUTLETS: {serial: outlet}},
+            discovery_flow.async_create_flow(
+                self.hass,
+                DOMAIN,
+                context={"source": SOURCE_SYSTEM},
+                data={"serial": serial, "outlet": outlet},
             )
+            return self.async_abort(reason="outlet_added")
 
         outlets = hub.data.get(CONF_OUTLETS, {})
         if serial in outlets:
@@ -103,7 +160,7 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_outlet(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Add an outlet by host (creates the hub if needed)."""
+        """Add an outlet by host, then name it (creates the hub if needed)."""
         errors: dict[str, str] = {}
         if user_input is not None:
             try:
@@ -111,10 +168,35 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
             except InvisOutletError:
                 errors["base"] = "cannot_connect"
             else:
-                return await self._async_add_outlet(serial, outlet)
+                hub = self._find_hub()
+                if hub is not None and serial in hub.data.get(CONF_OUTLETS, {}):
+                    return self.async_abort(reason="already_configured")
+                if _previously_known(self.hass, serial):
+                    # Re-add: the old identity restores; no naming step.
+                    return await self._async_add_outlet(serial, outlet)
+                self._probed = {"serial": serial, "outlet": outlet}
+                return await self.async_step_name()
 
         return self.async_show_form(
             step_id="outlet", data_schema=STEP_OUTLET_DATA_SCHEMA, errors=errors
+        )
+
+    async def async_step_name(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Name the outlet's device, then add it."""
+        probed = self._probed
+        assert probed is not None
+        if user_input is not None:
+            return await self._async_add_outlet(
+                probed["serial"], _named_outlet(probed["outlet"], user_input)
+            )
+        return self.async_show_form(
+            step_id="name",
+            data_schema=self.add_suggested_values_to_schema(
+                OUTLET_NAME_SCHEMA,
+                {CONF_NAME: f"InvisOutlet {probed['serial']}"},
+            ),
         )
 
     async def async_step_zeroconf(
@@ -154,17 +236,30 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_zeroconf_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Confirm adding a discovered outlet to the hub."""
-        assert self._discovered is not None
-        if user_input is not None:
-            return await self._async_add_outlet(
-                self._discovered["serial"],
-                {CONF_HOST: self._discovered["host"]},
-            )
+        """Confirm and name a discovered outlet.
 
-        self._set_confirm_only()
+        A previously known outlet restores its old identity, so it gets a
+        plain confirm with no naming fields.
+        """
+        assert self._discovered is not None
+        known = _previously_known(self.hass, self._discovered["serial"])
+        if user_input is not None:
+            outlet: dict[str, Any] = {CONF_HOST: self._discovered["host"]}
+            if not known:
+                outlet = _named_outlet(outlet, user_input)
+            return await self._async_add_outlet(self._discovered["serial"], outlet)
+
+        if known:
+            self._set_confirm_only()
+            return self.async_show_form(
+                step_id="zeroconf_confirm",
+                description_placeholders={"name": self._discovered["title"]},
+            )
         return self.async_show_form(
             step_id="zeroconf_confirm",
+            data_schema=self.add_suggested_values_to_schema(
+                OUTLET_NAME_SCHEMA, {CONF_NAME: self._discovered["title"]}
+            ),
             description_placeholders={"name": self._discovered["title"]},
         )
 

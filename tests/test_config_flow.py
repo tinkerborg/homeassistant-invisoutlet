@@ -6,9 +6,10 @@ from ipaddress import ip_address
 from unittest.mock import AsyncMock
 
 from homeassistant.config_entries import SOURCE_USER, SOURCE_ZEROCONF
-from homeassistant.const import CONF_HOST
+from homeassistant.const import CONF_HOST, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from invisoutlet import InvisOutletConnectionError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -48,7 +49,7 @@ def _zeroconf_info(
 async def test_user_flow_creates_hub(
     hass: HomeAssistant, mock_client: AsyncMock, mock_setup_entry: AsyncMock
 ) -> None:
-    """A manual add probes the outlet and creates the hub entry."""
+    """A manual add probes and names the outlet; the hub is created invisibly."""
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
@@ -58,19 +59,30 @@ async def test_user_flow_creates_hub(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_HOST: HOST}
     )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "name"
 
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "InvisOutlet Devices"
-    assert result["data"] == {
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_NAME: "Lab Outlet"}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "outlet_added"
+
+    # The hub entry itself is created by the background system-source flow.
+    await hass.async_block_till_done()
+    entries = hass.config_entries.async_entries(DOMAIN)
+    assert len(entries) == 1
+    assert entries[0].title == "InvisOutlet Devices"
+    assert entries[0].data == {
         CONF_ENTRY_TYPE: ENTRY_TYPE_HUB,
-        CONF_OUTLETS: {SERIAL: {CONF_HOST: HOST}},
+        CONF_OUTLETS: {SERIAL: {CONF_HOST: HOST, CONF_NAME: "Lab Outlet"}},
     }
 
 
 async def test_user_flow_cannot_connect_then_recovers(
     hass: HomeAssistant, mock_client: AsyncMock, mock_setup_entry: AsyncMock
 ) -> None:
-    """An unreachable outlet shows an error, then succeeds on retry."""
+    """An unreachable outlet shows an error, then proceeds to naming on retry."""
     mock_client.connect.side_effect = InvisOutletConnectionError("boom")
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
@@ -85,18 +97,32 @@ async def test_user_flow_cannot_connect_then_recovers(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_HOST: HOST}
     )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "name"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_NAME: "Recovered Outlet"}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "outlet_added"
 
 
-async def test_user_flow_adds_outlet_to_existing_hub(
+async def test_user_flow_readd_skips_naming(
     hass: HomeAssistant,
     mock_client: AsyncMock,
     mock_setup_entry: AsyncMock,
     mock_config_entry: MockConfigEntry,
 ) -> None:
-    """A second outlet is appended to the existing hub, not a new entry."""
+    """Re-adding a previously removed outlet restores it without a naming step."""
     mock_config_entry.add_to_hass(hass)
     mock_client.get_device_info.return_value.serial_number = "SN_SECOND"
+    # The outlet existed before: a tombstoned device remains in the registry.
+    dev_reg = dr.async_get(hass)
+    device = dev_reg.async_get_or_create(
+        config_entry_id=mock_config_entry.entry_id,
+        identifiers={(DOMAIN, "SN_SECOND")},
+    )
+    dev_reg.async_remove_device(device.id)
 
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
@@ -107,7 +133,38 @@ async def test_user_flow_adds_outlet_to_existing_hub(
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "outlet_added"
+    # Stored without a chosen name: the old identity restores on setup.
+    outlet = mock_config_entry.data[CONF_OUTLETS]["SN_SECOND"]
+    assert CONF_NAME not in outlet
+
+
+async def test_user_flow_adds_outlet_to_existing_hub(
+    hass: HomeAssistant,
+    mock_client: AsyncMock,
+    mock_setup_entry: AsyncMock,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A second outlet is named and appended to the existing hub."""
+    mock_config_entry.add_to_hass(hass)
+    mock_client.get_device_info.return_value.serial_number = "SN_SECOND"
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: "10.0.0.50"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "name"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_NAME: "Second Outlet"}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "outlet_added"
     assert set(mock_config_entry.data[CONF_OUTLETS]) == {SERIAL, "SN_SECOND"}
+    outlet = mock_config_entry.data[CONF_OUTLETS]["SN_SECOND"]
+    assert outlet[CONF_NAME] == "Second Outlet"
 
 
 async def test_user_flow_duplicate_outlet_aborts(
@@ -133,17 +190,25 @@ async def test_user_flow_duplicate_outlet_aborts(
 async def test_zeroconf_discovery_creates_hub(
     hass: HomeAssistant, mock_client: AsyncMock, mock_setup_entry: AsyncMock
 ) -> None:
-    """A discovered outlet is confirmed and creates the hub."""
+    """A discovered outlet is confirmed and named; the hub is created invisibly."""
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_ZEROCONF}, data=_zeroconf_info()
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "zeroconf_confirm"
 
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_NAME: "Discovered Outlet"}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "outlet_added"
 
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"][CONF_OUTLETS] == {SERIAL: {CONF_HOST: HOST}}
+    await hass.async_block_till_done()
+    entries = hass.config_entries.async_entries(DOMAIN)
+    assert len(entries) == 1
+    assert entries[0].data[CONF_OUTLETS] == {
+        SERIAL: {CONF_HOST: HOST, CONF_NAME: "Discovered Outlet"}
+    }
 
 
 async def test_zeroconf_without_serial_aborts(
