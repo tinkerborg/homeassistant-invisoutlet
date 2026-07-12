@@ -747,6 +747,9 @@ class AuraEffectVirtualLight(LightEntity):
     _attr_should_poll = False
     _attr_min_color_temp_kelvin = MIN_KELVIN
     _attr_max_color_temp_kelvin = MAX_KELVIN
+    # Created hidden: the pixels are edit-time controls, not everyday entities, so
+    # they stay out of dashboards and pickers until the user unhides them.
+    _attr_entity_registry_visible_default = False
 
     def __init__(
         self, entry: InvisOutletConfigEntry, effect_id: str, name: str, index: int
