@@ -64,7 +64,7 @@ To use one, pick it from the **effect dropdown** on a physical Aura light — th
 
 - Add effects from the hub's **+ Add Aura Effect** button; each shows up in every Aura light's effect dropdown
 - While an effect is running, the physical light collapses to on/off + brightness, and **brightness acts as a master ceiling** — turn it to 50% and the whole animation dims to 50% of itself
-- Turn the light off and back on and the effect just resumes; pick **None** and the light's own base color comes right back
+- Turn the light off and back on and the effect just resumes; pick **Static** and the light's own base color comes right back
 
 ### Device configuration
 
