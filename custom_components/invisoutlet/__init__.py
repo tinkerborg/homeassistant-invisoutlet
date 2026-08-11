@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigSubentry
 from homeassistant.const import CONF_HOST, CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import (
     DeviceEntry,
@@ -23,6 +24,8 @@ from homeassistant.helpers.typing import ConfigType
 
 from invisoutlet import InvisOutletClient
 
+from .commission import async_setup_interceptor
+from .commission_bridge import async_setup_commission_bridge
 from .const import (
     CONF_AREA,
     CONF_EFFECTS,
@@ -35,12 +38,12 @@ from .const import (
     SUBENTRY_AURA_EFFECT,
     SUBENTRY_OUTLET,
 )
-from .commission import async_setup_interceptor
-from .commission_bridge import async_setup_commission_bridge
 from .coordinator import InvisOutletConfigEntry, InvisOutletCoordinator
 from .helpers import outlet_added_signal
 
 _LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:

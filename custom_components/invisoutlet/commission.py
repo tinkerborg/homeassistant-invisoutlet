@@ -24,17 +24,16 @@ that command so we can:
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict, dataclass
 import logging
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import voluptuous as vol
-from zeroconf import IPVersion, ServiceStateChange, Zeroconf
-from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo
-
 from homeassistant.components import websocket_api
 from homeassistant.components import zeroconf as ha_zeroconf
 from homeassistant.core import HomeAssistant, callback
+from zeroconf import IPVersion, ServiceStateChange, Zeroconf
+from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo
 
 from .const import DOMAIN
 from .ws_intercept import async_delegate, async_intercept_command

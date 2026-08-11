@@ -12,6 +12,7 @@
   "documentation": "https://github.com/tinkerborg/homeassistant-invisoutlet",
   "after_dependencies": [
     "frontend",
+    "http",
     "matter"
   ],
   "integration_type": "device",
