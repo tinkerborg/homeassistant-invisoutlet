@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock
 import pytest
 from homeassistant.components.update import (
     DOMAIN as UPDATE_DOMAIN,
+)
+from homeassistant.components.update import (
     SERVICE_INSTALL,
 )
 from homeassistant.const import ATTR_ENTITY_ID, STATE_ON
