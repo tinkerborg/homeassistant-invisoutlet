@@ -42,6 +42,11 @@ def auto_enable_custom_integrations(
     """Enable the custom integration for every test."""
 
 
+@pytest.fixture(autouse=True)
+def _mock_zeroconf(mock_async_zeroconf: MagicMock) -> None:
+    """Mock zeroconf so the integration's zeroconf dependency opens no sockets."""
+
+
 def make_device_info(*, with_deco: bool = False, deco_type: str | None = None) -> DeviceInfo:
     """Build a DeviceInfo, optionally with an attached faceplate."""
     sub_device = None

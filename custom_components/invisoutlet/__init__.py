@@ -35,6 +35,8 @@ from .const import (
     SUBENTRY_AURA_EFFECT,
     SUBENTRY_OUTLET,
 )
+from .commission import async_setup_interceptor
+from .commission_bridge import async_setup_commission_bridge
 from .coordinator import InvisOutletConfigEntry, InvisOutletCoordinator
 from .helpers import outlet_added_signal
 
@@ -44,6 +46,8 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the InvisOutlet integration."""
     _async_purge_orphan_rows(hass)
+    async_setup_interceptor(hass)
+    await async_setup_commission_bridge(hass)
 
     return True
 

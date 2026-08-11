@@ -46,56 +46,50 @@ def _zeroconf_info(
     )
 
 
+async def _menu_to_outlet(hass: HomeAssistant, flow_id: str) -> dict:
+    """Open the add menu's 'outlet' (add-by-IP) branch and return its form."""
+    return await hass.config_entries.flow.async_configure(
+        flow_id, {"next_step_id": "outlet"}
+    )
+
+
 async def test_user_flow_creates_hub(
     hass: HomeAssistant, mock_client: AsyncMock, mock_setup_entry: AsyncMock
 ) -> None:
-    """A manual add probes and names the outlet; the hub is created invisibly."""
+    """The first manual add creates the (empty) hub entry directly."""
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "outlet"
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: HOST}
-    )
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "name"
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_NAME: "Lab Outlet"}
-    )
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "outlet_added"
-
-    # The hub entry itself is created by the background system-source flow.
-    await hass.async_block_till_done()
-    entries = hass.config_entries.async_entries(DOMAIN)
-    assert len(entries) == 1
-    assert entries[0].title == "InvisOutlet Devices"
-    assert entries[0].data == {
-        CONF_ENTRY_TYPE: ENTRY_TYPE_HUB,
-        CONF_OUTLETS: {SERIAL: {CONF_HOST: HOST, CONF_NAME: "Lab Outlet"}},
-    }
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "InvisOutlet"
+    assert result["data"] == {CONF_ENTRY_TYPE: ENTRY_TYPE_HUB, CONF_OUTLETS: {}}
 
 
 async def test_user_flow_cannot_connect_then_recovers(
-    hass: HomeAssistant, mock_client: AsyncMock, mock_setup_entry: AsyncMock
+    hass: HomeAssistant,
+    mock_client: AsyncMock,
+    mock_setup_entry: AsyncMock,
+    mock_config_entry: MockConfigEntry,
 ) -> None:
-    """An unreachable outlet shows an error, then proceeds to naming on retry."""
+    """The add-by-IP step shows an error, then proceeds to naming on retry."""
+    mock_config_entry.add_to_hass(hass)
+    mock_client.get_device_info.return_value.serial_number = "SN_SECOND"
     mock_client.connect.side_effect = InvisOutletConnectionError("boom")
+
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
+    assert result["type"] is FlowResultType.MENU
+    result = await _menu_to_outlet(hass, result["flow_id"])
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: HOST}
+        result["flow_id"], {CONF_HOST: "10.0.0.50"}
     )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
 
     mock_client.connect.side_effect = None
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: HOST}
+        result["flow_id"], {CONF_HOST: "10.0.0.50"}
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "name"
@@ -127,6 +121,7 @@ async def test_user_flow_readd_skips_naming(
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
+    result = await _menu_to_outlet(hass, result["flow_id"])
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_HOST: "10.0.0.50"}
     )
@@ -151,6 +146,7 @@ async def test_user_flow_adds_outlet_to_existing_hub(
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
+    result = await _menu_to_outlet(hass, result["flow_id"])
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_HOST: "10.0.0.50"}
     )
@@ -179,6 +175,7 @@ async def test_user_flow_duplicate_outlet_aborts(
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
+    result = await _menu_to_outlet(hass, result["flow_id"])
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_HOST: HOST}
     )

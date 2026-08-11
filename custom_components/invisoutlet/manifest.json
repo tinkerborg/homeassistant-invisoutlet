@@ -5,7 +5,9 @@
     "@tinkerborg"
   ],
   "config_flow": true,
+  "dependencies": ["websocket_api", "zeroconf"],
   "documentation": "https://github.com/tinkerborg/homeassistant-invisoutlet",
+  "after_dependencies": ["frontend", "matter"],
   "integration_type": "device",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/tinkerborg/homeassistant-invisoutlet/issues",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import MappingProxyType
 from typing import Any
 from uuid import uuid4
@@ -25,6 +26,7 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from invisoutlet import InvisOutletClient, InvisOutletError
 
+from .commission import EVENT_COMMISSION_FINISHED, EVENT_COMMISSIONED
 from .const import (
     CONF_AREA,
     CONF_EFFECTS,
@@ -35,6 +37,9 @@ from .const import (
     MANUFACTURER,
     SUBENTRY_AURA_EFFECT,
 )
+
+# How long to wait for the phone to finish commissioning before giving up.
+COMMISSION_TIMEOUT = 180
 
 STEP_OUTLET_DATA_SCHEMA = vol.Schema({vol.Required(CONF_HOST): str})
 OUTLET_NAME_SCHEMA = vol.Schema(
@@ -82,6 +87,7 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize the flow."""
         self._discovered: dict[str, Any] | None = None
         self._probed: dict[str, Any] | None = None
+        self._commission_task: asyncio.Task[dict[str, Any] | None] | None = None
 
     @classmethod
     @callback
@@ -154,8 +160,103 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Adding an entry manually means adding an outlet."""
-        return await self.async_step_outlet(user_input)
+        """First add creates the hub; later adds offer a way to add an outlet."""
+        if self._find_hub() is None:
+            return self.async_create_entry(
+                title="InvisOutlet",
+                data={CONF_ENTRY_TYPE: ENTRY_TYPE_HUB, CONF_OUTLETS: {}},
+            )
+        return self.async_show_menu(
+            step_id="user", menu_options=["commission", "outlet"]
+        )
+
+    async def async_step_commission(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Wait for the phone (commission_bridge.js launches it) to commission an outlet.
+
+        The frontend hack fires the app's Matter commissioning when this
+        progress step appears; the interceptor resolves the new outlet and
+        fires ``EVENT_COMMISSIONED``. Both paths converge on the name step.
+        """
+        if self._commission_task is None:
+            self._commission_task = self.hass.async_create_task(
+                self._async_wait_for_commission()
+            )
+        if not self._commission_task.done():
+            return self.async_show_progress(
+                step_id="commission",
+                progress_action="commissioning",
+                progress_task=self._commission_task,
+            )
+
+        probed = self._commission_task.result()
+        self._commission_task = None
+        if probed is None:
+            return self.async_show_progress_done(next_step_id="commission_failed")
+        self._probed = probed
+        return self.async_show_progress_done(next_step_id="name")
+
+    async def async_step_commission_failed(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Commissioning didn't complete (timeout or unreachable)."""
+        return self.async_abort(reason="commission_failed")
+
+    async def _async_wait_for_commission(self) -> dict[str, Any] | None:
+        """Await an outlet being commissioned and the app reporting finished.
+
+        The interceptor's event carries the IP (fired at network setup); the
+        finish event carries the phone-set name (fired after the phone's naming
+        dialog). Waiting for finish keeps the flow on the spinner until the
+        phone's dialog closes, instead of surfacing the name step behind it.
+
+        The finish ``success`` flag is unreliable — cancelling before doing
+        anything still reports ``success: true`` — so we decide on the
+        interceptor's event instead. Await finish first (keeps the spinner up
+        until the phone's dialog closes); by then a real provision has already
+        fired the interceptor's event. So if it fired, proceed (carrying the
+        phone-set ``name`` when present, else ``None`` for the default); if not,
+        the user cancelled, so abort. Returns ``{"serial", "outlet", "name"}``
+        for the name step, or ``None`` to abort.
+        """
+        commissioned: asyncio.Future[dict[str, Any]] = self.hass.loop.create_future()
+        finished: asyncio.Future[dict[str, Any]] = self.hass.loop.create_future()
+
+        @callback
+        def _on_commissioned(event) -> None:
+            if event.data.get("is_invisoutlet") and not commissioned.done():
+                commissioned.set_result(event.data)
+
+        @callback
+        def _on_finished(event) -> None:
+            if not finished.done():
+                finished.set_result(event.data)
+
+        unsubs = [
+            self.hass.bus.async_listen(EVENT_COMMISSIONED, _on_commissioned),
+            self.hass.bus.async_listen(EVENT_COMMISSION_FINISHED, _on_finished),
+        ]
+        try:
+            try:
+                await asyncio.wait_for(finished, COMMISSION_TIMEOUT)
+            except TimeoutError:
+                return None
+            if not commissioned.done():
+                return None  # cancelled: nothing was provisioned
+            detail = commissioned.result()
+            finish = finished.result()
+        finally:
+            for unsub in unsubs:
+                unsub()
+
+        if not (ip := detail.get("ip")):
+            return None
+        try:
+            serial, outlet = await _probe_outlet(ip)
+        except InvisOutletError:
+            return None
+        return {"serial": serial, "outlet": outlet, "name": finish.get("name")}
 
     async def async_step_outlet(
         self, user_input: dict[str, Any] | None = None
@@ -191,11 +292,12 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
             return await self._async_add_outlet(
                 probed["serial"], _named_outlet(probed["outlet"], user_input)
             )
+        # Pre-fill with the phone-set name from commissioning when we have one.
+        suggested = probed.get("name") or f"InvisOutlet {probed['serial']}"
         return self.async_show_form(
             step_id="name",
             data_schema=self.add_suggested_values_to_schema(
-                OUTLET_NAME_SCHEMA,
-                {CONF_NAME: f"InvisOutlet {probed['serial']}"},
+                OUTLET_NAME_SCHEMA, {CONF_NAME: suggested}
             ),
         )
 
