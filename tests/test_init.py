@@ -7,7 +7,8 @@ from unittest.mock import AsyncMock
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from invisoutlet import InvisOutletConnectionError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 

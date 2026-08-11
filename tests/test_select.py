@@ -6,8 +6,10 @@ from unittest.mock import AsyncMock
 
 from homeassistant.components.select import (
     ATTR_OPTION,
-    DOMAIN as SELECT_DOMAIN,
     SERVICE_SELECT_OPTION,
+)
+from homeassistant.components.select import (
+    DOMAIN as SELECT_DOMAIN,
 )
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant

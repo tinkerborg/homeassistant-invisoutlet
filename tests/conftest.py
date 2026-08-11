@@ -6,6 +6,8 @@ from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.config_entries import ConfigSubentryData
+from homeassistant.core import HomeAssistant
 from invisoutlet import (
     AvailableUpdates,
     DeviceConfig,
@@ -17,8 +19,6 @@ from invisoutlet import (
     SensorData,
     SubDeviceInfo,
 )
-from homeassistant.config_entries import ConfigSubentryData
-from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.invisoutlet.const import (

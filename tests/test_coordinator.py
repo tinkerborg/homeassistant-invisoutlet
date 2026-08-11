@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-from unittest.mock import patch
-
-from invisoutlet import InvisOutletError, OtaProgress, OtaResult, OutletStatus
+from invisoutlet import (
+    InvisOutletError,
+    OtaProgress,
+    OtaResult,
+    OutletStatus,
+    SensorData,
+)
 from invisoutlet.client import CALLBACK_DEVICE_INFO, CALLBACK_NIGHTLIGHT_STATUS
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -29,7 +33,6 @@ from .conftest import (
     push_sensor,
     registered_callback,
 )
-from invisoutlet import SensorData
 
 
 def _outlet_entity(hass: HomeAssistant) -> str:

@@ -102,16 +102,13 @@ class _FieldDescription(Protocol[_DataT_contra]):
     value_fn: Callable[[_DataT_contra], object]
 
 
-_DescriptionT = TypeVar("_DescriptionT", bound=_FieldDescription[Any])
-
-
-def supported_for_faceplate(
+def supported_for_faceplate[DescriptionT: _FieldDescription[Any]](
     hass: HomeAssistant,
     coordinator: InvisOutletCoordinator,
     domain: str,
-    descriptions: Sequence[_DescriptionT],
+    descriptions: Sequence[DescriptionT],
     data: object | None,
-) -> Sequence[_DescriptionT]:
+) -> Sequence[DescriptionT]:
     """Keep only the descriptions the device currently reports, pruning the rest.
 
     The device omits fields that don't apply to the attached faceplate
