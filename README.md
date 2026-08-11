@@ -33,7 +33,10 @@ Copy `custom_components/invisoutlet` into your Home Assistant `config/custom_com
 
 ## Setup
 
-Once installed, your outlets are discovered automatically over the network — you'll see them show up under **Settings → Devices & Services** ready to add. If you'd rather add one by hand, use **Add Integration → InvisOutlet** and enter its IP address.
+Use **Add Integration → InvisOutlet**, which asks whether the outlet is already on your network:
+
+- **Already on the network** — it's discovered automatically under **Settings → Devices & Services**, or add it by IP address.
+- **New or factory reset** — from the HomeAssistant mobile app, follow the prompts to hand the outlet your network credentials over Bluetooth so it can join.
 
 Everything else — the sensors, lights, config, firmware entities — appears on the device page. Aura effects are added from the hub's **+ Add Aura Effect** button.
 
@@ -98,6 +101,7 @@ The InvisOutlet is a lot more than an outlet — there's a whole environmental s
 | Aura effect designer (per-pixel, modes, speed) | ✅ | ❌ | ❌ |
 | Device config & restart actions | ✅ | ❌ | ❌ |
 | Firmware updates from inside HA | ✅ | ❌ | ❌ |
+| Device commissioning | ✅ | ✅ | ❌ |
 | No extra server required | ✅ | ❌ (Matter Server) | ❌ (broker) |
 
 ## Issues & contributions
