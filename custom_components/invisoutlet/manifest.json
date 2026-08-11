@@ -1,6 +1,11 @@
 {
   "domain": "invisoutlet",
   "name": "InvisOutlet",
+  "after_dependencies": [
+    "frontend",
+    "http",
+    "matter"
+  ],
   "codeowners": [
     "@tinkerborg"
   ],
@@ -10,11 +15,6 @@
     "zeroconf"
   ],
   "documentation": "https://github.com/tinkerborg/homeassistant-invisoutlet",
-  "after_dependencies": [
-    "frontend",
-    "http",
-    "matter"
-  ],
   "integration_type": "device",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/tinkerborg/homeassistant-invisoutlet/issues",
