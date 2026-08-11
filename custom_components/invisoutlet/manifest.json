@@ -5,16 +5,22 @@
     "@tinkerborg"
   ],
   "config_flow": true,
-  "dependencies": ["websocket_api", "zeroconf"],
+  "dependencies": [
+    "websocket_api",
+    "zeroconf"
+  ],
   "documentation": "https://github.com/tinkerborg/homeassistant-invisoutlet",
-  "after_dependencies": ["frontend", "matter"],
+  "after_dependencies": [
+    "frontend",
+    "matter"
+  ],
   "integration_type": "device",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/tinkerborg/homeassistant-invisoutlet/issues",
   "requirements": [
     "invisoutlet==1.0.1"
   ],
-  "version": "1.0.2",
+  "version": "1.1.0",
   "zeroconf": [
     "_invis._tcp.local."
   ]
