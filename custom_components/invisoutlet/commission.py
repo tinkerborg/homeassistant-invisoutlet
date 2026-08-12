@@ -159,17 +159,25 @@ async def async_find_commissionable_ip(
     return addresses[0] if addresses else None
 
 
-async def async_ip_advertises_invis(
+async def async_invis_serial_at_ip(
     hass: HomeAssistant, ip: str, timeout: float = 5.0
-) -> bool:
-    """Check whether the same IP announces the InvisOutlet websocket service."""
+) -> str | None:
+    """Return the InvisOutlet serial (mDNS ``sn``) advertised at ``ip``, if any.
+
+    Doubles as the "is it one of ours" check — only InvisOutlets announce
+    ``_invis._tcp`` — and hands back the serial the zeroconf flow keys on, so it
+    can be claimed before the outlet is fully added.
+    """
     info = await _async_browse_match(
         hass,
         INVIS_SERVICE_TYPE,
         lambda info: ip in info.parsed_addresses(),
         timeout,
     )
-    return info is not None
+    if info is None:
+        return None
+    sn = info.properties.get(b"sn")
+    return sn.decode() if sn else None
 
 
 async def async_identify_commission(
@@ -180,7 +188,12 @@ async def async_identify_commission(
     Returns a detail dict with the decoded payload, resolved ``ip``, and
     ``is_invisoutlet`` flag. Never raises: a bad code is reported via ``error``.
     """
-    detail: dict[str, Any] = {"code": code, "ip": None, "is_invisoutlet": False}
+    detail: dict[str, Any] = {
+        "code": code,
+        "ip": None,
+        "serial": None,
+        "is_invisoutlet": False,
+    }
     try:
         payload = parse_setup_code(code)
     except ValueError as err:
@@ -191,7 +204,9 @@ async def async_identify_commission(
     ip = await async_find_commissionable_ip(hass, payload.discriminator)
     detail["ip"] = ip
     if ip is not None:
-        detail["is_invisoutlet"] = await async_ip_advertises_invis(hass, ip)
+        serial = await async_invis_serial_at_ip(hass, ip)
+        detail["serial"] = serial
+        detail["is_invisoutlet"] = serial is not None
     return detail
 
 
