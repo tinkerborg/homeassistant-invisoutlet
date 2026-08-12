@@ -6,7 +6,7 @@
 
 A native Home Assistant integration for [Intecular](https://intecular.com) InvisOutlet smart outlets and their InvisDeco / Aura faceplates.
 
-It talks to the device directly over its local WebSocket API — no cloud, no broker, no polling. Everything is event-driven, so state shows up the instant it changes on the device.
+It communicates with the device via local TCP connection — no cloud, no broker, no polling. Everything is event-driven, so state shows up the instant it changes on the device.
 
 If you've been running your InvisOutlet through Matter or MQTT and wondering where the rest of its features went, this is where they went.
 
@@ -81,7 +81,7 @@ To use one, pick it from the **effect dropdown** on a physical Aura light — th
 
 ### Under the hood
 
-- Local push over WebSocket — no polling, no cloud
+- Local push over TCP — no polling, no cloud
 - Zeroconf discovery — devices are found automatically and follow DHCP address changes
 - Auto-reconnect that survives reboots and firmware updates
 - One integration entry manages every outlet on your network; add or remove one without disturbing the others

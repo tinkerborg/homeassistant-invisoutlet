@@ -1057,7 +1057,7 @@ test = [
 
 [package.metadata.requires-dev]
 test = [
-    { name = "invisoutlet", specifier = "==1.0.0" },
+    { name = "invisoutlet", specifier = "~=1.1.0" },
     { name = "pytest-cov" },
     { name = "pytest-homeassistant-custom-component" },
 ]
@@ -1128,15 +1128,15 @@ wheels = [
 
 [[package]]
 name = "invisoutlet"
-version = "1.0.0"
+version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "zeroconf" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/17/b8/bc7a392eff0315487c6008594c4fdf9a5d660c94b9f5660ab29b7aba6b60/invisoutlet-1.0.0.tar.gz", hash = "sha256:6c04cddb1ec485e9390f0797c19a692862f94d70f38971a8b8a1d9c18ea177d5", size = 48882, upload-time = "2026-07-01T01:06:59.751Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/03/cf/c7403e15be3f5ccf618bcecd2859fca0e1b31acd9b2ee7454ea5ed8cf939/invisoutlet-1.1.0.tar.gz", hash = "sha256:8334f12c96ca6a56fd02338e8252ab2e3a2ab71b69ae7e83183d4b7b7e34be6a", size = 53090, upload-time = "2026-08-11T22:42:48.709Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/74/da/ac738a4dc08c8c5f23c71c0fe72f58b9b296de4bad6e6577a1ce0af3f8e0/invisoutlet-1.0.0-py3-none-any.whl", hash = "sha256:a964da61adc47ce1a3146c76c3985da0c307d7817fb8d45c4cb8471e787edb8d", size = 38286, upload-time = "2026-07-01T01:06:58.585Z" },
+    { url = "https://files.pythonhosted.org/packages/30/06/6bf18ed1e00a2e0d49b76e826f3fe82f2911c3d5111df21cbb20410e9c41/invisoutlet-1.1.0-py3-none-any.whl", hash = "sha256:9e8aa968cefa144d04cee5b17e87e2db156c33b05a265db905b931717faf39c4", size = 41013, upload-time = "2026-08-11T22:42:47.59Z" },
 ]
 
 [[package]]

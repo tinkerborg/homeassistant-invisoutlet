@@ -12,7 +12,7 @@ package = false
 test = [
   "pytest-homeassistant-custom-component",
   "pytest-cov",
-  "invisoutlet==1.0.0",
+  "invisoutlet~=1.1.0",
 ]
 
 [tool.pytest.ini_options]

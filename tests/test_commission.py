@@ -378,6 +378,8 @@ async def test_commission_flow_lands_on_name_prefilled(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "outlet_added"
     assert mock_config_entry.data[CONF_OUTLETS]["SN_NEW"][CONF_NAME] == "Phone Name"
+    # A freshly commissioned outlet gets one post-provisioning reboot.
+    mock_client.restart.assert_awaited_once()
 
 
 async def test_commission_flow_cancel_aborts(
