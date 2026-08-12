@@ -31,7 +31,7 @@ from custom_components.invisoutlet.commission import (
     FINISHED_COMMAND,
     async_find_commissionable_ip,
     async_identify_commission,
-    async_ip_advertises_invis,
+    async_invis_serial_at_ip,
     parse_setup_code,
 )
 from custom_components.invisoutlet.const import CONF_OUTLETS, DOMAIN
@@ -114,13 +114,14 @@ async def test_identify_commission_ours(hass: HomeAssistant) -> None:
             AsyncMock(return_value="10.0.0.77"),
         ),
         patch(
-            "custom_components.invisoutlet.commission.async_ip_advertises_invis",
-            AsyncMock(return_value=True),
+            "custom_components.invisoutlet.commission.async_invis_serial_at_ip",
+            AsyncMock(return_value="SN_ABC"),
         ),
     ):
         detail = await async_identify_commission(hass, code)
     assert detail["is_invisoutlet"] is True
     assert detail["ip"] == "10.0.0.77"
+    assert detail["serial"] == "SN_ABC"
     assert detail["discriminator"] == 1234
 
 
@@ -133,8 +134,8 @@ async def test_identify_commission_not_ours(hass: HomeAssistant) -> None:
             AsyncMock(return_value="10.0.0.5"),
         ),
         patch(
-            "custom_components.invisoutlet.commission.async_ip_advertises_invis",
-            AsyncMock(return_value=False),
+            "custom_components.invisoutlet.commission.async_invis_serial_at_ip",
+            AsyncMock(return_value=None),
         ),
     ):
         detail = await async_identify_commission(hass, code)
@@ -165,19 +166,21 @@ async def test_find_commissionable_ip(hass: HomeAssistant) -> None:
         assert await async_find_commissionable_ip(hass, 1234) is None
 
 
-async def test_ip_advertises_invis(hass: HomeAssistant) -> None:
-    """The check is True when a matching _invis advertisement is found."""
+async def test_invis_serial_at_ip(hass: HomeAssistant) -> None:
+    """Returns the mDNS ``sn`` serial when a matching _invis record is found."""
+    info = MagicMock()
+    info.properties = {b"sn": b"SN_ABC"}
     with patch(
         "custom_components.invisoutlet.commission._async_browse_match",
-        AsyncMock(return_value=MagicMock()),
+        AsyncMock(return_value=info),
     ):
-        assert await async_ip_advertises_invis(hass, "10.0.0.9") is True
+        assert await async_invis_serial_at_ip(hass, "10.0.0.9") == "SN_ABC"
 
     with patch(
         "custom_components.invisoutlet.commission._async_browse_match",
         AsyncMock(return_value=None),
     ):
-        assert await async_ip_advertises_invis(hass, "10.0.0.9") is False
+        assert await async_invis_serial_at_ip(hass, "10.0.0.9") is None
 
 
 async def test_setup_registers_commands(
@@ -231,8 +234,8 @@ async def test_ws_commission_claims_ours(
             AsyncMock(return_value="10.0.0.77"),
         ),
         patch(
-            "custom_components.invisoutlet.commission.async_ip_advertises_invis",
-            AsyncMock(return_value=True),
+            "custom_components.invisoutlet.commission.async_invis_serial_at_ip",
+            AsyncMock(return_value="SN_ABC"),
         ),
     ):
         await client.send_json_auto_id(
@@ -353,16 +356,22 @@ async def test_commission_flow_lands_on_name_prefilled(
 
     flow_id = await _init_commission_flow(hass)
 
-    # Stand in for the app: provisioning event (IP), then finish (name).
-    hass.bus.async_fire(
-        EVENT_COMMISSIONED, {"is_invisoutlet": True, "ip": "10.0.0.77"}
-    )
-    hass.bus.async_fire(
-        EVENT_COMMISSION_FINISHED, {"success": True, "name": "Phone Name"}
-    )
-    await hass.async_block_till_done()
+    # Stand in for the app: provisioning event (IP), then finish (name). The
+    # post-reboot readiness check is device behavior, mocked away here.
+    with patch(
+        "custom_components.invisoutlet.config_flow._async_confirm_rebooted"
+    ):
+        hass.bus.async_fire(
+            EVENT_COMMISSIONED,
+            {"is_invisoutlet": True, "ip": "10.0.0.77", "serial": "SN_NEW"},
+        )
+        hass.bus.async_fire(
+            EVENT_COMMISSION_FINISHED, {"success": True, "name": "Phone Name"}
+        )
+        await hass.async_block_till_done()
+        # Both phases (wait-for-phone, then reboot + add) run through.
+        result = await hass.config_entries.flow.async_configure(flow_id)
 
-    result = await hass.config_entries.flow.async_configure(flow_id)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "name"
     suggested = {

@@ -5,13 +5,14 @@ from __future__ import annotations
 from ipaddress import ip_address
 from unittest.mock import AsyncMock
 
+import pytest
 from homeassistant.config_entries import SOURCE_USER, SOURCE_ZEROCONF
 from homeassistant.const import CONF_HOST, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
-from invisoutlet import InvisOutletConnectionError
+from invisoutlet import InvisOutletConnectionError, InvisOutletError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.invisoutlet.const import (
@@ -281,3 +282,23 @@ async def test_aura_effect_subentry_flow_appends(
     assert len(subentries) == 1
     names = {e["name"] for e in subentries[0].data[CONF_EFFECTS].values()}
     assert names == {"Sunset", "Aurora"}
+
+
+async def test_confirm_rebooted_waits_for_down_then_up(
+    hass: HomeAssistant, mock_client: AsyncMock
+) -> None:
+    """The post-reboot check returns only after a real down→up cycle."""
+    from custom_components.invisoutlet.config_flow import _async_confirm_rebooted
+
+    mock_client.get_device_info.side_effect = [object(), InvisOutletError("x"), object()]
+    await _async_confirm_rebooted(HOST, interval=0)
+
+
+async def test_confirm_rebooted_gives_up_without_reboot(
+    hass: HomeAssistant, mock_client: AsyncMock
+) -> None:
+    """If the outlet never drops, the check raises instead of hanging forever."""
+    from custom_components.invisoutlet.config_flow import _async_confirm_rebooted
+
+    with pytest.raises(InvisOutletError):
+        await _async_confirm_rebooted(HOST, attempts=3, interval=0)

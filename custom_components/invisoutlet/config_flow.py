@@ -40,6 +40,9 @@ from .const import (
 
 # How long to wait for the phone to finish commissioning before giving up.
 COMMISSION_TIMEOUT = 180
+# Overall cap on the reboot-and-reconnect phase, so a hung connect can never
+# leave the flow in progress and block zeroconf discovery indefinitely.
+FINALIZE_TIMEOUT = 120
 
 STEP_OUTLET_DATA_SCHEMA = vol.Schema({vol.Required(CONF_HOST): str})
 OUTLET_NAME_SCHEMA = vol.Schema(
@@ -66,15 +69,39 @@ def _previously_known(hass: HomeAssistant, serial: str) -> bool:
     return dev_reg.deleted_devices.get_entry({(DOMAIN, serial)}, None) is not None
 
 
+async def _async_confirm_rebooted(
+    host: str, *, attempts: int = 30, interval: float = 2.0
+) -> None:
+    """Block until the outlet has rebooted and its API answers again.
+
+    Confirms a real down→up cycle with live reads, so the caller only proceeds
+    once the device is back — otherwise the coordinator's first refresh reads a
+    half-booted device and it comes up with no entities. Raises if it never does.
+    """
+    went_down = False
+    for _ in range(attempts):
+        client = InvisOutletClient(host)
+        try:
+            await client.connect()
+            await client.get_device_info()
+            if went_down:
+                return
+        except InvisOutletError:
+            went_down = True
+        finally:
+            await client.close()
+        await asyncio.sleep(interval)
+    raise InvisOutletError(f"{host} did not come back after reboot")
+
+
 async def _probe_outlet(
     host: str, *, restart: bool = False
 ) -> tuple[str, dict[str, Any]]:
     """Connect to an outlet, returning ``(serial, outlet_config)``.
 
-    Raises :class:`InvisOutletError` if the outlet can't be reached.
-
-    ``restart=True`` reboots the outlet after reading its info — used only on
-    the commissioning path, where a reboot stops the setup light blinking.
+    Raises :class:`InvisOutletError` if unreachable. ``restart=True`` reboots the
+    outlet (to stop the setup-light blink) then blocks until its API answers
+    again, so setup doesn't read a half-booted device.
     """
     client = InvisOutletClient(host)
     try:
@@ -84,6 +111,8 @@ async def _probe_outlet(
             await client.restart()
     finally:
         await client.close()
+    if restart:
+        await _async_confirm_rebooted(host)
     return info.serial_number, {CONF_HOST: host}
 
 
@@ -94,7 +123,9 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize the flow."""
         self._discovered: dict[str, Any] | None = None
         self._probed: dict[str, Any] | None = None
+        self._commissioned: dict[str, Any] | None = None
         self._commission_task: asyncio.Task[dict[str, Any] | None] | None = None
+        self._finalize_task: asyncio.Task[dict[str, Any] | None] | None = None
 
     @classmethod
     @callback
@@ -112,6 +143,16 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
             if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_HUB:
                 return entry
         return None
+
+    def _commission_in_progress(self) -> bool:
+        """Whether an outlet is currently being commissioned via the QR flow."""
+        return any(
+            flow["flow_id"] != self.flow_id
+            and flow.get("step_id") in ("commission", "finalize")
+            for flow in self.hass.config_entries.flow.async_progress_by_handler(
+                DOMAIN, include_uninitialized=True
+            )
+        )
 
     async def async_step_system(
         self, user_input: dict[str, Any] | None = None
@@ -197,8 +238,30 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
                 progress_task=self._commission_task,
             )
 
-        probed = self._commission_task.result()
+        commissioned = self._commission_task.result()
         self._commission_task = None
+        if commissioned is None:
+            return self.async_show_progress_done(next_step_id="commission_failed")
+        self._commissioned = commissioned
+        return self.async_show_progress_done(next_step_id="finalize")
+
+    async def async_step_finalize(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Reboot the outlet (to stop the setup-light blink) and wait for it back."""
+        if self._finalize_task is None:
+            self._finalize_task = self.hass.async_create_task(
+                self._async_finalize_outlet()
+            )
+        if not self._finalize_task.done():
+            return self.async_show_progress(
+                step_id="finalize",
+                progress_action="finalize",
+                progress_task=self._finalize_task,
+            )
+
+        probed = self._finalize_task.result()
+        self._finalize_task = None
         if probed is None:
             return self.async_show_progress_done(next_step_id="commission_failed")
         self._probed = probed
@@ -210,6 +273,18 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
         """Commissioning didn't complete (timeout or unreachable)."""
         return self.async_abort(reason="commission_failed")
 
+    async def _async_finalize_outlet(self) -> dict[str, Any] | None:
+        """Reboot the freshly commissioned outlet and read it once it's back."""
+        assert self._commissioned is not None
+        try:
+            async with asyncio.timeout(FINALIZE_TIMEOUT):
+                serial, outlet = await _probe_outlet(
+                    self._commissioned["ip"], restart=True
+                )
+        except (InvisOutletError, TimeoutError):
+            return None
+        return {"serial": serial, "outlet": outlet, "name": self._commissioned["name"]}
+
     async def _async_wait_for_commission(self) -> dict[str, Any] | None:
         """Await an outlet being commissioned and the app reporting finished.
 
@@ -218,14 +293,14 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
         dialog). Waiting for finish keeps the flow on the spinner until the
         phone's dialog closes, instead of surfacing the name step behind it.
 
-        The finish ``success`` flag is unreliable — cancelling before doing
+        The finish ``success`` flag is unreliable — canceling before doing
         anything still reports ``success: true`` — so we decide on the
         interceptor's event instead. Await finish first (keeps the spinner up
         until the phone's dialog closes); by then a real provision has already
         fired the interceptor's event. So if it fired, proceed (carrying the
         phone-set ``name`` when present, else ``None`` for the default); if not,
-        the user cancelled, so abort. Returns ``{"serial", "outlet", "name"}``
-        for the name step, or ``None`` to abort.
+        the user canceled, so abort. Returns ``{"ip", "name"}`` for the finalize
+        step, or ``None`` to abort.
         """
         commissioned: asyncio.Future[dict[str, Any]] = self.hass.loop.create_future()
         finished: asyncio.Future[dict[str, Any]] = self.hass.loop.create_future()
@@ -250,7 +325,7 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
             except TimeoutError:
                 return None
             if not commissioned.done():
-                return None  # cancelled: nothing was provisioned
+                return None  # canceled: nothing was provisioned
             detail = commissioned.result()
             finish = finished.result()
         finally:
@@ -259,11 +334,7 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if not (ip := detail.get("ip")):
             return None
-        try:
-            serial, outlet = await _probe_outlet(ip, restart=True)
-        except InvisOutletError:
-            return None
-        return {"serial": serial, "outlet": outlet, "name": finish.get("name")}
+        return {"ip": ip, "name": finish.get("name")}
 
     async def async_step_outlet(
         self, user_input: dict[str, Any] | None = None
@@ -317,6 +388,12 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="no_serial")
 
         host = str(discovery_info.ip_address)
+        # A commission flow is running: this discovery is the device being
+        # commissioned (it advertises before the interceptor knows its serial),
+        # so let that flow add it — don't surface a competing card.
+        if self._commission_in_progress():
+            return self.async_abort(reason="commission_in_progress")
+
         # Already an outlet on the hub? Keep its host current and stop.
         hub = self._find_hub()
         if hub is not None:

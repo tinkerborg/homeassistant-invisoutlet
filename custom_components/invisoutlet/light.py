@@ -70,7 +70,7 @@ _LOGGER = logging.getLogger(__name__)
 # How many virtual pixels the standalone "Aura Effects" pseudo-device exposes.
 _EFFECT_PIXELS = 9
 
-# The Color Light's "no effect" option (plain static colour), always first in
+# The Color Light's "no effect" option (plain static color), always first in
 # its effect list.
 EFFECT_NONE = "Static"
 
@@ -232,9 +232,7 @@ class InvisOutletColorLight(InvisOutletEntity, LightEntity):
         # The light's own color, kept so "None" can revert to it after a template
         # effect has overwritten the device's LEDs.
         base = record.get("base_hs")
-        self._base_hs: tuple[float, float] | None = (
-            (base[0], base[1]) if base else None
-        )
+        self._base_hs: tuple[float, float] | None = (base[0], base[1]) if base else None
         # The static base can be a color or a white temperature; remember both and
         # which was last set, so "Static" restores whichever the user had.
         self._base_temp: int | None = record.get("base_temp")
@@ -402,7 +400,7 @@ class InvisOutletColorLight(InvisOutletEntity, LightEntity):
 
     @property
     def effect_list(self) -> list[str]:
-        """"Static" first, then every effect; the external entry while out of control."""
+        """ "Static" first, then every effect; the external entry while out of control."""
         names = [EFFECT_NONE, *(name for _, name in self._effects())]
         if self._external:
             names.append(self._external_name)
@@ -638,7 +636,12 @@ class InvisOutletColorLight(InvisOutletEntity, LightEntity):
     def hs_color(self) -> tuple[float, float] | None:
         """Return the array's hue/saturation (hidden while an effect runs)."""
         led = self._led
-        if self._effect_active or led is None or led.hue is None or led.saturation is None:
+        if (
+            self._effect_active
+            or led is None
+            or led.hue is None
+            or led.saturation is None
+        ):
             return None
         return (led.hue, led.saturation)
 
@@ -680,7 +683,11 @@ class InvisOutletColorLight(InvisOutletEntity, LightEntity):
             # "None" can restore it later even if no color was ever set by hand.
             if new_id is not None and self._base_hs is None:
                 led = self._led
-                if led is not None and led.hue is not None and led.saturation is not None:
+                if (
+                    led is not None
+                    and led.hue is not None
+                    and led.saturation is not None
+                ):
                     self._base_hs = (led.hue, led.saturation)
             self._selected_effect_id = new_id
             self._persist()
