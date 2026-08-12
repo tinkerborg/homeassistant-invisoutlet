@@ -99,6 +99,8 @@ async def test_user_flow_cannot_connect_then_recovers(
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "outlet_added"
+    # Only the commissioning path reboots the outlet.
+    mock_client.restart.assert_not_awaited()
 
 
 async def test_user_flow_readd_skips_naming(

@@ -66,15 +66,22 @@ def _previously_known(hass: HomeAssistant, serial: str) -> bool:
     return dev_reg.deleted_devices.get_entry({(DOMAIN, serial)}, None) is not None
 
 
-async def _probe_outlet(host: str) -> tuple[str, dict[str, Any]]:
+async def _probe_outlet(
+    host: str, *, restart: bool = False
+) -> tuple[str, dict[str, Any]]:
     """Connect to an outlet, returning ``(serial, outlet_config)``.
 
     Raises :class:`InvisOutletError` if the outlet can't be reached.
+
+    ``restart=True`` reboots the outlet after reading its info — used only on
+    the commissioning path, where a reboot stops the setup light blinking.
     """
     client = InvisOutletClient(host)
     try:
         await client.connect()
         info = await client.get_device_info()
+        if restart:
+            await client.restart()
     finally:
         await client.close()
     return info.serial_number, {CONF_HOST: host}
@@ -253,7 +260,7 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
         if not (ip := detail.get("ip")):
             return None
         try:
-            serial, outlet = await _probe_outlet(ip)
+            serial, outlet = await _probe_outlet(ip, restart=True)
         except InvisOutletError:
             return None
         return {"serial": serial, "outlet": outlet, "name": finish.get("name")}
