@@ -38,6 +38,7 @@ from .const import (
     SUBENTRY_AURA_EFFECT,
     SUBENTRY_OUTLET,
 )
+from .entity import configuration_url
 from .coordinator import InvisOutletConfigEntry, InvisOutletCoordinator
 from .helpers import outlet_added_signal
 
@@ -139,17 +140,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: InvisOutletConfigEntry) 
 async def _async_outlets_changed(
     hass: HomeAssistant, entry: InvisOutletConfigEntry
 ) -> None:
-    """React to the outlet map changing: add new outlets live, reload on removal."""
-    configured = set(entry.data.get(CONF_OUTLETS, {}))
+    """React to the outlet map changing: hosts, new outlets, reload on removal."""
+    dev_reg = async_get_device_registry(hass)
+    outlets = entry.data.get(CONF_OUTLETS, {})
+    configured = set(outlets)
     current = set(entry.runtime_data)
     if current - configured:
         # An outlet was removed — full reload to tear it down cleanly.
         await hass.config_entries.async_reload(entry.entry_id)
         return
+    for serial in configured & current:
+        # Zeroconf re-discovery records a new IP here when DHCP moves an outlet.
+        # The coordinator's client was built with the old one and would go on
+        # retrying it forever, so hand it the new address to reconnect to.
+        host = outlets[serial].get(CONF_HOST)
+        if not host:
+            continue
+        coordinator = entry.runtime_data[serial]
+        if host == coordinator.client.host:
+            continue
+        await coordinator.client.set_host(host)
+        # The "Visit device" link is built from the host, so move it too rather
+        # than leaving the device page pointing at an address nothing answers on.
+        device = dev_reg.async_get_device(identifiers={(DOMAIN, serial)})
+        if device is not None:
+            dev_reg.async_update_device(
+                device.id,
+                configuration_url=configuration_url(
+                    host, coordinator.device_info.hw_rev
+                ),
+            )
     for serial in configured - current:
-        await _async_add_outlet(
-            hass, entry, serial, entry.data[CONF_OUTLETS][serial], dispatch=True
-        )
+        await _async_add_outlet(hass, entry, serial, outlets[serial], dispatch=True)
 
 
 @callback

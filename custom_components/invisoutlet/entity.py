@@ -9,6 +9,16 @@ from .const import DOMAIN, MANUFACTURER
 from .coordinator import InvisOutletCoordinator
 
 
+def configuration_url(host: str | None, hw_rev: str | None) -> str | None:
+    """The device page's "Visit device" link, or None when there's nothing to visit.
+
+    revB hardware has no web UI.
+    """
+    if not host or hw_rev == "revB":
+        return None
+    return f"http://{host}"
+
+
 class InvisOutletEntity(CoordinatorEntity[InvisOutletCoordinator]):
     """Base entity tying everything to the device registry entry."""
 
@@ -20,10 +30,6 @@ class InvisOutletEntity(CoordinatorEntity[InvisOutletCoordinator]):
         info = coordinator.device_info
         connections = {(CONNECTION_NETWORK_MAC, info.mac)} if info.mac else set()
         name = " ".join(p for p in (info.device, info.serial_number) if p)
-        # revB hardware has no web UI, so it gets no "Visit device" link.
-        # The IP follows DHCP changes: zeroconf re-discovery updates CONF_HOST and
-        # reloads the entry, which recreates this configuration_url with the new IP.
-        has_web_ui = info.hw_rev != "revB"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, info.serial_number)},
             connections=connections,
@@ -32,7 +38,5 @@ class InvisOutletEntity(CoordinatorEntity[InvisOutletCoordinator]):
             sw_version=info.fw_rev,
             serial_number=info.serial_number,
             name=name or MANUFACTURER,
-            configuration_url=(
-                f"http://{info.host}" if info.host and has_web_ui else None
-            ),
+            configuration_url=configuration_url(info.host, info.hw_rev),
         )
