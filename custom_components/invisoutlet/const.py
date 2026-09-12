@@ -45,6 +45,11 @@ EFFECT_STATIC_TEMPERATURE = "static_temperature"
 # The hardware maker; the product/model is "InvisOutlet".
 MANUFACTURER = "Intecular"
 
+# The "device" field of an outlet's mDNS TXT record. An attached faceplate rides
+# along in the same record as sub_device, but advertises a service of its own
+# while updating over its own Wi-Fi, reporting its own serial as "sn".
+MODEL_OUTLET = "InvisOutlet"
+
 # How the attached faceplate's firmware is delivered, stored per-outlet under
 # CONF_OUTLETS[serial]. The value is the device method (callback 21 arg 1):
 # 0 = over the faceplate's own Wi-Fi (default), 1 = via the InvisOutlet.
