@@ -222,6 +222,19 @@ async def test_zeroconf_without_serial_aborts(
     assert result["reason"] == "no_serial"
 
 
+async def test_zeroconf_faceplate_aborts(
+    hass: HomeAssistant, mock_client: AsyncMock
+) -> None:
+    """A faceplate advertising itself mid-update is not offered as an outlet."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF},
+        data=_zeroconf_info(serial="24A182019B6", model="InvisDeco"),
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "not_an_outlet"
+
+
 async def test_zeroconf_known_outlet_updates_host(
     hass: HomeAssistant,
     mock_client: AsyncMock,

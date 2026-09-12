@@ -35,6 +35,7 @@ from .const import (
     DOMAIN,
     ENTRY_TYPE_HUB,
     MANUFACTURER,
+    MODEL_OUTLET,
     SUBENTRY_AURA_EFFECT,
 )
 
@@ -383,6 +384,13 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
         self, discovery_info: ZeroconfServiceInfo
     ) -> ConfigFlowResult:
         """Handle an outlet discovered over mDNS."""
+        # A faceplate mid-update advertises its own service, with its own serial
+        # under "sn". Adding that as an outlet yields an entity-less device bound
+        # to a lease that disappears when the update finishes.
+        model = discovery_info.properties.get("device")
+        if model is not None and model != MODEL_OUTLET:
+            return self.async_abort(reason="not_an_outlet")
+
         serial = discovery_info.properties.get("sn")
         if not serial:
             return self.async_abort(reason="no_serial")
@@ -413,8 +421,7 @@ class InvisOutletConfigFlow(ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="already_configured")
 
         await self.async_set_unique_id(serial)
-        model = discovery_info.properties.get("device") or ""
-        title = " ".join(p for p in (model, serial) if p) or MANUFACTURER
+        title = " ".join(p for p in (model or "", serial) if p) or MANUFACTURER
         self._discovered = {"serial": serial, "title": title, "host": host}
         self.context["title_placeholders"] = {"name": title}
         return await self.async_step_zeroconf_confirm()

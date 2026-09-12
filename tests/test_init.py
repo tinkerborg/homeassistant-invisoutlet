@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
@@ -95,6 +96,33 @@ async def test_chosen_name_and_area_applied_before_entities(
     ent_reg = er.async_get(hass)
     entity_id = ent_reg.async_get_entity_id("switch", DOMAIN, f"{SERIAL}_outlet_1")
     assert entity_id == "switch.test_lab_lab_rig_outlet_1"
+
+
+async def test_host_change_repoints_client(
+    hass: HomeAssistant, mock_client: AsyncMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """A new IP in the outlet map is handed to the live client."""
+    entry = await init_integration(hass, mock_config_entry)
+    outlets = entry.data[CONF_OUTLETS]
+
+    hass.config_entries.async_update_entry(
+        entry,
+        data={
+            **entry.data,
+            CONF_OUTLETS: {
+                SERIAL: {**outlets[SERIAL], CONF_HOST: "10.0.0.250"},
+            },
+        },
+    )
+    await hass.async_block_till_done()
+
+    mock_client.set_host.assert_awaited_with("10.0.0.250")
+    assert entry.state is ConfigEntryState.LOADED
+
+    dev_reg = dr.async_get(hass)
+    device = dev_reg.async_get_device(identifiers={(DOMAIN, SERIAL)})
+    assert device is not None
+    assert device.configuration_url == "http://10.0.0.250"
 
 
 async def test_remove_outlet_device(
