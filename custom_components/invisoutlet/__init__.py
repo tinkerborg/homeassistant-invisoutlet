@@ -38,8 +38,8 @@ from .const import (
     SUBENTRY_AURA_EFFECT,
     SUBENTRY_OUTLET,
 )
-from .entity import configuration_url
 from .coordinator import InvisOutletConfigEntry, InvisOutletCoordinator
+from .entity import configuration_url
 from .helpers import outlet_added_signal
 
 _LOGGER = logging.getLogger(__name__)
