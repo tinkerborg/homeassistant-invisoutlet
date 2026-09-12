@@ -73,6 +73,27 @@
     }
   },
   "entity": {
+    "sensor": {
+      "transport": {
+        "name": "Transport",
+        "state": {
+          "tcp": "TCP",
+          "ws": "WebSocket"
+        }
+      },
+      "reconnects": {
+        "name": "Reconnects"
+      },
+      "faceplate_dropouts": {
+        "name": "Faceplate dropouts"
+      },
+      "connected_since": {
+        "name": "Connected since"
+      },
+      "last_sensor_push": {
+        "name": "Last sensor push"
+      }
+    },
     "select": {
       "aura_effect": {
         "name": "Effect",

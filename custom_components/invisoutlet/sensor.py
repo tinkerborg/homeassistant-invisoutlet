@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -121,6 +122,51 @@ SENSORS: tuple[InvisOutletSensorDescription, ...] = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class InvisOutletDiagnosticDescription(SensorEntityDescription):
+    """Describes a connection-health sensor read off the coordinator."""
+
+    value_fn: Callable[[InvisOutletCoordinator], str | int | datetime | None]
+
+
+# Connection-health sensors, for telling apart a dropping connection from a
+# faceplate that has gone quiet behind a healthy one. Off by default: useful
+# when diagnosing a report, noise on a working install.
+DIAGNOSTICS: tuple[InvisOutletDiagnosticDescription, ...] = (
+    InvisOutletDiagnosticDescription(
+        key="transport",
+        translation_key="transport",
+        device_class=SensorDeviceClass.ENUM,
+        options=["tcp", "ws"],
+        value_fn=lambda c: c.client.transport_name,
+    ),
+    InvisOutletDiagnosticDescription(
+        key="reconnects",
+        translation_key="reconnects",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda c: c.reconnects,
+    ),
+    InvisOutletDiagnosticDescription(
+        key="faceplate_dropouts",
+        translation_key="faceplate_dropouts",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda c: c.faceplate_dropouts,
+    ),
+    InvisOutletDiagnosticDescription(
+        key="connected_since",
+        translation_key="connected_since",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda c: c.connected_since,
+    ),
+    InvisOutletDiagnosticDescription(
+        key="last_sensor_push",
+        translation_key="last_sensor_push",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda c: c.last_sensor_push,
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: InvisOutletConfigEntry,
@@ -141,6 +187,10 @@ async def async_setup_entry(
             InvisOutletSensor(coordinator, description) for description in supported
         ]
         entities.append(InvisOutletStatusSensor(coordinator))
+        entities.extend(
+            InvisOutletDiagnosticSensor(coordinator, description)
+            for description in DIAGNOSTICS
+        )
         return entities
 
     async_add_outlet_entities(hass, entry, async_add_entities, build)
@@ -198,3 +248,33 @@ class InvisOutletStatusSensor(InvisOutletEntity, SensorEntity):
         return "mdi:alert-circle"
 
 
+
+
+class InvisOutletDiagnosticSensor(InvisOutletEntity, SensorEntity):
+    """A connection-health reading, disabled until someone goes looking."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+    entity_description: InvisOutletDiagnosticDescription
+
+    def __init__(
+        self,
+        coordinator: InvisOutletCoordinator,
+        description: InvisOutletDiagnosticDescription,
+    ) -> None:
+        """Initialize the diagnostic sensor."""
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._attr_unique_id = (
+            f"{coordinator.device_info.serial_number}_{description.key}"
+        )
+
+    @property
+    def available(self) -> bool:
+        """Stay available while the connection is down; that's the point."""
+        return True
+
+    @property
+    def native_value(self) -> str | int | datetime | None:
+        """Return the current value."""
+        return self.entity_description.value_fn(self.coordinator)
