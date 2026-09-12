@@ -63,3 +63,43 @@ async def test_sensor_updates_on_push(
 
     await push_sensor(hass, mock_client, SensorData(temperature=25.5, humidity=40.0))
     assert hass.states.get(temp_id).state == "25.5"
+
+
+async def test_diagnostic_sensors_are_disabled_by_default(
+    hass: HomeAssistant, mock_client: AsyncMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """Connection-health sensors are registered but off until asked for."""
+    await init_integration(hass, mock_config_entry)
+    ent_reg = er.async_get(hass)
+
+    for key in (
+        "transport",
+        "reconnects",
+        "faceplate_dropouts",
+        "connected_since",
+        "last_sensor_push",
+    ):
+        entity_id = ent_reg.async_get_entity_id("sensor", DOMAIN, f"{SERIAL}_{key}")
+        assert entity_id is not None, key
+        assert ent_reg.async_get(entity_id).disabled_by is er.RegistryEntryDisabler.INTEGRATION
+        assert hass.states.get(entity_id) is None
+
+
+async def test_connection_counters_track_drops(
+    hass: HomeAssistant, mock_client: AsyncMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """A drop counts a reconnect; a quiet faceplate counts a dropout."""
+    entry = await init_integration(hass, mock_config_entry)
+    coordinator = entry.runtime_data[SERIAL]
+    assert coordinator.reconnects == 0
+    assert coordinator.faceplate_dropouts == 0
+
+    coordinator._handle_disconnect()
+    assert coordinator.reconnects == 1
+    assert coordinator.connected_since is None
+
+    await push_sensor(hass, mock_client, SensorData(temperature=20.0))
+    assert coordinator.last_sensor_push is not None
+    coordinator._cancel_sub_device_watchdog()
+    coordinator._sub_device_timed_out(None)
+    assert coordinator.faceplate_dropouts == 1

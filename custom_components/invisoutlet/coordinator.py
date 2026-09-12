@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from invisoutlet import (
     ColorEffect,
@@ -128,6 +129,14 @@ class InvisOutletCoordinator(DataUpdateCoordinator[OutletStatus]):
         # from its sensor pushes; ``False`` until the first push confirms it.
         self.sub_device_online: bool = False
         self._sub_device_watchdog: CALLBACK_TYPE | None = None
+        # Connection-health counters, surfaced as disabled-by-default diagnostic
+        # sensors. They separate the two ways an outlet degrades: the connection
+        # dropping (reconnects) and the faceplate going quiet while the
+        # connection is fine (faceplate dropouts).
+        self.reconnects: int = 0
+        self.faceplate_dropouts: int = 0
+        self.connected_since: datetime | None = None
+        self.last_sensor_push: datetime | None = None
         # Recurring firmware-check timer; canceled per-outlet on teardown so a
         # single outlet can be removed without reloading the whole hub.
         self._unsub_firmware: CALLBACK_TYPE | None = None
@@ -357,6 +366,7 @@ class InvisOutletCoordinator(DataUpdateCoordinator[OutletStatus]):
         online and (re)arm the offline watchdog.
         """
         self.sensor = data
+        self.last_sensor_push = dt_util.utcnow()
         self._mark_sub_device_online()
         self.async_update_listeners()
 
@@ -498,11 +508,13 @@ class InvisOutletCoordinator(DataUpdateCoordinator[OutletStatus]):
         self._sub_device_watchdog = None
         if self.sub_device_online:
             self.sub_device_online = False
+            self.faceplate_dropouts += 1
             self.async_update_listeners()
 
     @callback
     def _handle_connect(self) -> None:
         """Re-pull state after a (re)connect (pushes were missed)."""
+        self.connected_since = dt_util.utcnow()
         self.hass.async_create_task(self._handle_reconnect())
 
     async def _handle_reconnect(self) -> None:
@@ -557,6 +569,8 @@ class InvisOutletCoordinator(DataUpdateCoordinator[OutletStatus]):
         # The sub-device's status is unknown until pushes resume after reconnect.
         self._cancel_sub_device_watchdog()
         self.sub_device_online = False
+        self.reconnects += 1
+        self.connected_since = None
         self.async_set_update_error(InvisOutletConnectionError("Connection lost"))
 
     @callback
